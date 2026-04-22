@@ -20,8 +20,8 @@ from backend.routers import (
     auth,
     trips,
     bookings,
-    agents,
-    rag
+    # agents,  # Disabled - requires langchain
+    # rag      # Disabled - requires langchain
 )
 
 @asynccontextmanager
@@ -53,8 +53,8 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(trips.router, prefix="/api/trips", tags=["Trips"])
 app.include_router(bookings.router, prefix="/api/bookings", tags=["Bookings"])
-app.include_router(agents.router, prefix="/api/agents", tags=["AI Agents"])
-app.include_router(rag.router, prefix="/api/rag", tags=["RAG"])
+# app.include_router(agents.router, prefix="/api/agents", tags=["AI Agents"])  # Disabled
+# app.include_router(rag.router, prefix="/api/rag", tags=["RAG"])  # Disabled
 
 @app.get("/")
 async def root():
