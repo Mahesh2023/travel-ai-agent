@@ -37,6 +37,8 @@ services:
     envVars:
       - key: NEXT_PUBLIC_API_URL
         value: https://travel-ai-backend.onrender.com
+    # Next.js specific settings
+    publishDir: .next
 
 databases:
   - name: travel-db
