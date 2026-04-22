@@ -31,6 +31,7 @@ services:
     name: travel-ai-frontend
     runtime: node
     plan: starter
+    workingDir: frontend
     buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
