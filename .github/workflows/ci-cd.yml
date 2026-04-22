@@ -1,0 +1,197 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: travel-ai
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        cd backend
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+    
+    - name: Run tests
+      run: |
+        cd backend
+        pytest --cov=. --cov-report=xml
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+    
+    - name: Install frontend dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Run frontend tests
+      run: |
+        cd frontend
+        npm run test
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Build and push Gateway
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend/gateway
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/gateway:latest
+        file: ./backend/Dockerfile.gateway
+    
+    - name: Build and push Search Service
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend/services/search
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/search-service:latest
+        file: ./backend/Dockerfile.search
+    
+    - name: Build and push Booking Service
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend/services/booking
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/booking-service:latest
+        file: ./backend/Dockerfile.booking
+    
+    - name: Build and push Inventory Service
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend/services/inventory
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/inventory-service:latest
+        file: ./backend/Dockerfile.inventory
+    
+    - name: Build and push Payment Service
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend/services/payment
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/payment-service:latest
+        file: ./backend/Dockerfile.payment
+    
+    - name: Build and push User Service
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend/services/user
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/user-service:latest
+        file: ./backend/Dockerfile.user
+    
+    - name: Build and push RAG Service
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend/services/rag
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/rag-service:latest
+        file: ./backend/Dockerfile.rag
+    
+    - name: Build and push MCP Service
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend/services/mcp
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/mcp-service:latest
+        file: ./backend/Dockerfile.mcp
+    
+    - name: Build and push Notification Service
+      uses: docker/build-push-action@v4
+      with:
+        context: ./backend/services/notification
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/notification-service:latest
+        file: ./backend/Dockerfile.notification
+    
+    - name: Build and push Frontend
+      uses: docker/build-push-action@v4
+      with:
+        context: ./frontend
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/frontend:latest
+        file: ./frontend/Dockerfile
+
+  deploy-kubernetes:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+    
+    - name: Configure kubeconfig
+      run: |
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+    
+    - name: Apply Kubernetes manifests
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/configmap.yaml
+        kubectl apply -f k8s/secrets.yaml
+        kubectl apply -f k8s/postgres.yaml
+        kubectl apply -f k8s/redis.yaml
+        kubectl apply -f k8s/elasticsearch.yaml
+        kubectl apply -f k8s/kafka.yaml
+        kubectl apply -f k8s/cassandra.yaml
+        kubectl apply -f k8s/gateway.yaml
+        kubectl apply -f k8s/search-service.yaml
+        kubectl apply -f k8s/booking-service.yaml
+        kubectl apply -f k8s/inventory-service.yaml
+        kubectl apply -f k8s/payment-service.yaml
+        kubectl apply -f k8s/user-service.yaml
+        kubectl apply -f k8s/rag-service.yaml
+        kubectl apply -f k8s/mcp-service.yaml
+        kubectl apply -f k8s/notification-service.yaml
+        kubectl apply -f k8s/frontend.yaml
+        kubectl apply -f k8s/monitoring.yaml
+    
+    - name: Rollout deployments
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl rollout restart deployment/api-gateway -n travel-ai
+        kubectl rollout restart deployment/search-service -n travel-ai
+        kubectl rollout restart deployment/booking-service -n travel-ai
+        kubectl rollout restart deployment/inventory-service -n travel-ai
+        kubectl rollout restart deployment/payment-service -n travel-ai
+        kubectl rollout restart deployment/user-service -n travel-ai
+        kubectl rollout restart deployment/rag-service -n travel-ai
+        kubectl rollout restart deployment/mcp-service -n travel-ai
+        kubectl rollout restart deployment/notification-service -n travel-ai
+        kubectl rollout restart deployment/frontend -n travel-ai

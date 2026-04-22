@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-service
+  namespace: travel-ai
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mcp-service
+  template:
+    metadata:
+      labels:
+        app: mcp-service
+    spec:
+      containers:
+      - name: mcp-service
+        image: travel-ai/mcp-service:latest
+        env:
+        - name: AMADEUS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: travel-secrets
+              key: AMADEUS_API_KEY
+        - name: AMADEUS_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: travel-secrets
+              key: AMADEUS_SECRET
+        - name: BOOKING_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: travel-secrets
+              key: BOOKING_API_KEY
+        - name: WEATHER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: travel-secrets
+              key: WEATHER_API_KEY
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: travel-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: travel-config
+              key: REDIS_PORT
+        - name: KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: travel-config
+              key: KAFKA_BROKERS
+        ports:
+        - containerPort: 8007
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-service
+  namespace: travel-ai
+spec:
+  selector:
+    app: mcp-service
+  ports:
+  - port: 8007
+    targetPort: 8007
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mcp-service-hpa
+  namespace: travel-ai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mcp-service
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
