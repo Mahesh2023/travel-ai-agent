@@ -1,0 +1,11 @@
+# Simplified Travel AI Agent - Following teloscopy pattern
+# FastAPI + Vanilla HTML/CSS/JS + LLM Integration
+
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic>=2.6.0
+python-dotenv==1.0.0
+
+# No external dependencies needed for basic functionality
+# LLM integration uses standard library (urllib) for OpenAI-compatible APIs
