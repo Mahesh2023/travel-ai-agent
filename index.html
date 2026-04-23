@@ -102,6 +102,132 @@
             z-index: 1;
         }
 
+        /* Auth UI */
+        .auth-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 80vh;
+        }
+
+        .auth-card {
+            background: var(--dark-light);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: var(--shadow-xl);
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .auth-tabs {
+            display: flex;
+            margin-bottom: 30px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            color: var(--gray);
+            transition: all 0.3s ease;
+            border-bottom: 2px solid transparent;
+        }
+
+        .auth-tab.active {
+            color: white;
+            border-bottom-color: var(--primary);
+        }
+
+        .auth-form {
+            display: none;
+        }
+
+        .auth-form.active {
+            display: block;
+        }
+
+        .auth-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--gradient-1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.15);
+        }
+
+        /* Voice UI */
+        .voice-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: var(--gradient-1);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .voice-btn:hover {
+            transform: scale(1.1);
+            box-shadow: var(--shadow-xl);
+        }
+
+        .voice-btn.recording {
+            background: var(--danger);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+        }
+
+        .voice-status {
+            text-align: center;
+            margin-top: 10px;
+            color: var(--gray);
+            font-size: 0.9em;
+        }
+            position: relative;
+            z-index: 1;
+        }
+
         .stat {
             text-align: center;
         }
@@ -522,10 +648,17 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
+    <div class="container" id="mainApp" style="display: none;">
+        <!-- Header with Auth -->
         <div class="header">
-            <h1>✈️ Travel AI Agent</h1>
+            <div class="auth-header">
+                <h1>✈️ Travel AI Agent</h1>
+                <div class="user-info" id="userInfo" style="display: none;">
+                    <div class="user-avatar" id="userAvatar">U</div>
+                    <span id="userName">User</span>
+                    <button class="logout-btn" onclick="logout()">Logout</button>
+                </div>
+            </div>
             <p>Your intelligent travel companion for planning, guidance, and support</p>
             <div class="stats">
                 <div class="stat">
@@ -537,8 +670,8 @@
                     <div class="label">Travel Counselling</div>
                 </div>
                 <div class="stat">
-                    <div class="number">Safe</div>
-                    <div class="label">Emergency Detection</div>
+                    <div class="number">Voice</div>
+                    <div class="label">Voice Assistant</div>
                 </div>
             </div>
         </div>
@@ -603,8 +736,10 @@
                 <div class="chat-container" id="chatContainer"></div>
                 <div class="chat-input">
                     <input type="text" id="chatInput" placeholder="Type your message...">
+                    <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" title="Voice Assistant">🎤</button>
                     <button onclick="sendMessage()">Send</button>
                 </div>
+                <div class="voice-status" id="voiceStatus">Click microphone to speak</div>
                 <div class="followups" id="followups"></div>
                 <div class="loading" id="chatLoading">
                     <div class="loading-spinner"></div>
@@ -614,12 +749,266 @@
         </div>
     </div>
 
+    <!-- Auth Container -->
+    <div class="container auth-container" id="authContainer">
+        <div class="auth-card">
+            <h2 style="text-align: center; margin-bottom: 30px; color: white;">Welcome to Travel AI Agent</h2>
+            <div class="auth-tabs">
+                <div class="auth-tab active" onclick="switchTab('login')">Login</div>
+                <div class="auth-tab" onclick="switchTab('register')">Register</div>
+            </div>
+            
+            <!-- Login Form -->
+            <form id="loginForm" class="auth-form active">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="loginEmail" placeholder="your@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="loginPassword" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Login</button>
+                <div class="loading" id="loginLoading">
+                    <div class="loading-spinner"></div>
+                    <p>Logging in...</p>
+                </div>
+            </form>
+            
+            <!-- Register Form -->
+            <form id="registerForm" class="auth-form">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="registerEmail" placeholder="your@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="registerUsername" placeholder="traveler123" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="registerPassword" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Register</button>
+                <div class="loading" id="registerLoading">
+                    <div class="loading-spinner"></div>
+                    <p>Creating account...</p>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API_URL = window.location.hostname === 'localhost' 
             ? 'http://localhost:8000' 
             : 'https://travel-ai-backend.onrender.com';
 
         let conversation = [];
+        let accessToken = localStorage.getItem('accessToken');
+        let refreshToken = localStorage.getItem('refreshToken');
+        let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+        let isRecording = false;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let voiceWebSocket = null;
+
+        // Check authentication on load
+        if (accessToken && currentUser) {
+            showMainApp();
+        } else {
+            showAuth();
+        }
+
+        // Auth Functions
+        function switchTab(tab) {
+            document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+            
+            if (tab === 'login') {
+                document.querySelectorAll('.auth-tab')[0].classList.add('active');
+                document.getElementById('loginForm').classList.add('active');
+            } else {
+                document.querySelectorAll('.auth-tab')[1].classList.add('active');
+                document.getElementById('registerForm').classList.add('active');
+            }
+        }
+
+        async function register(email, username, password) {
+            const response = await fetch(`${API_URL}/api/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, username, password })
+            });
+            return await response.json();
+        }
+
+        async function login(email, password) {
+            const response = await fetch(`${API_URL}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            return await response.json();
+        }
+
+        async function logout() {
+            await fetch(`${API_URL}/api/auth/logout`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('currentUser');
+            accessToken = null;
+            refreshToken = null;
+            currentUser = null;
+            showAuth();
+        }
+
+        function showAuth() {
+            document.getElementById('authContainer').style.display = 'flex';
+            document.getElementById('mainApp').style.display = 'none';
+        }
+
+        function showMainApp() {
+            document.getElementById('authContainer').style.display = 'none';
+            document.getElementById('mainApp').style.display = 'block';
+            document.getElementById('userInfo').style.display = 'flex';
+            document.getElementById('userName').textContent = currentUser.username;
+            document.getElementById('userAvatar').textContent = currentUser.username.charAt(0).toUpperCase();
+        }
+
+        // Form handlers
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            const loading = document.getElementById('loginLoading');
+            loading.classList.add('active');
+            
+            try {
+                const data = await login(email, password);
+                accessToken = data.access_token;
+                refreshToken = data.refresh_token;
+                currentUser = data.user;
+                
+                localStorage.setItem('accessToken', accessToken);
+                localStorage.setItem('refreshToken', refreshToken);
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                
+                showMainApp();
+            } catch (error) {
+                alert('Login failed: ' + error.message);
+            } finally {
+                loading.classList.remove('active');
+            }
+        });
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('registerEmail').value;
+            const username = document.getElementById('registerUsername').value;
+            const password = document.getElementById('registerPassword').value;
+            
+            const loading = document.getElementById('registerLoading');
+            loading.classList.add('active');
+            
+            try {
+                const data = await register(email, username, password);
+                accessToken = data.access_token;
+                refreshToken = data.refresh_token;
+                currentUser = data.user;
+                
+                localStorage.setItem('accessToken', accessToken);
+                localStorage.setItem('refreshToken', refreshToken);
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                
+                showMainApp();
+            } catch (error) {
+                alert('Registration failed: ' + error.message);
+            } finally {
+                loading.classList.remove('active');
+            }
+        });
+
+        // Voice Functions
+        async function toggleVoice() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    const audioArrayBuffer = await audioBlob.arrayBuffer();
+                    
+                    // Send to voice WebSocket
+                    if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+                        voiceWebSocket.send(audioArrayBuffer);
+                    }
+                    
+                    // Stop all tracks
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                mediaRecorder.start();
+                isRecording = true;
+                document.getElementById('voiceBtn').classList.add('recording');
+                document.getElementById('voiceStatus').textContent = 'Listening...';
+                
+                // Connect to WebSocket if not connected
+                if (!voiceWebSocket || voiceWebSocket.readyState !== WebSocket.OPEN) {
+                    const wsUrl = API_URL.replace('http', 'ws') + '/ws/voice';
+                    voiceWebSocket = new WebSocket(wsUrl);
+                    
+                    voiceWebSocket.onopen = () => {
+                        console.log('Voice WebSocket connected');
+                    };
+                    
+                    voiceWebSocket.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'text') {
+                            addMessage(data.text, 'assistant');
+                        } else if (data.type === 'audio') {
+                            // Play audio response
+                            const audio = new Audio('data:audio/wav;base64,' + data.audio);
+                            audio.play();
+                        }
+                    };
+                    
+                    voiceWebSocket.onerror = (error) => {
+                        console.error('Voice WebSocket error:', error);
+                        document.getElementById('voiceStatus').textContent = 'Voice connection error';
+                    };
+                }
+                
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                document.getElementById('voiceStatus').textContent = 'Microphone access denied';
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                document.getElementById('voiceBtn').classList.remove('recording');
+                document.getElementById('voiceStatus').textContent = 'Processing...';
+            }
+        }
 
         // Travel Planning
         document.getElementById('travelForm').addEventListener('submit', async (e) => {
@@ -639,9 +1028,14 @@
             result.classList.remove('active');
 
             try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (accessToken) {
+                    headers['Authorization'] = `Bearer ${accessToken}`;
+                }
+                
                 const response = await fetch(`${API_URL}/api/travel/plan`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify({
                         destination,
                         start_date: startDate,
@@ -699,9 +1093,14 @@
             loading.classList.add('active');
 
             try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (accessToken) {
+                    headers['Authorization'] = `Bearer ${accessToken}`;
+                }
+                
                 const response = await fetch(`${API_URL}/api/travel/counsel`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify({
                         message,
                         conversation,

@@ -4,9 +4,9 @@ Modern, professional design with travel counselling assistant
 Following teloscopy pattern: FastAPI + LLM + Sentiment Analysis + Security + Scaling
 """
 
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import os
 import json
@@ -19,6 +19,14 @@ from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime, timedelta
 import hashlib
 import hmac
+
+# Import auth and voice modules
+from auth import (
+    hash_password, verify_password, create_access_token, create_refresh_token,
+    verify_token, get_current_user, create_session, get_session, delete_session,
+    delete_user_sessions, User
+)
+from voice import VoiceAssistant, VoiceWebSocketHandler, voice_handler
 
 load_dotenv()
 
@@ -896,6 +904,161 @@ def generate_followups(sentiment: Dict[str, Any], context: Optional[Dict]) -> Li
         "What type of trip are you considering?",
         "How can I help you feel more prepared?",
     ]
+
+# ============================================================================
+# Authentication Endpoints
+# ============================================================================
+class RegisterRequest(BaseModel):
+    email: str = Field(..., regex=r'^[^@]+@[^@]+\.[^@]+$')
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=8, max_length=100)
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class AuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: Dict[str, Any]
+
+@app.post("/api/auth/register", response_model=AuthResponse, dependencies=[Depends(rate_limit(10, 60))])
+async def register(request: RegisterRequest):
+    """Register new user"""
+    # Check if user already exists (in Redis for demo, use PostgreSQL in production)
+    user_data_key = f"user_data:{request.email}"
+    # In production, check PostgreSQL database here
+    
+    # Hash password
+    hashed_password = hash_password(request.password)
+    
+    # Create user
+    user_id = str(uuid.uuid4())
+    user_data = {
+        "user_id": user_id,
+        "email": request.email,
+        "username": request.username,
+        "hashed_password": hashed_password,
+        "is_active": True,
+        "created_at": datetime.utcnow().isoformat()
+    }
+    
+    # Store in Redis (demo - use PostgreSQL in production)
+    import redis
+    r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+    r.setex(user_data_key, timedelta(days=30).total_seconds(), json.dumps(user_data))
+    
+    # Create session
+    session_id = create_session(user_id, user_data)
+    
+    # Generate tokens
+    access_token = create_access_token(data={"sub": user_id})
+    refresh_token = create_refresh_token(data={"sub": user_id})
+    
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user={
+            "user_id": user_id,
+            "email": request.email,
+            "username": request.username
+        }
+    )
+
+@app.post("/api/auth/login", response_model=AuthResponse, dependencies=[Depends(rate_limit(20, 60))])
+async def login(request: LoginRequest):
+    """Login user"""
+    # Get user data (from Redis for demo, use PostgreSQL in production)
+    import redis
+    r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+    user_data_key = f"user_data:{request.email}"
+    user_data_json = r.get(user_data_key)
+    
+    if not user_data_json:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    user_data = json.loads(user_data_json)
+    
+    # Verify password
+    if not verify_password(request.password, user_data["hashed_password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    if not user_data.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Account is inactive")
+    
+    # Create session
+    session_id = create_session(user_data["user_id"], user_data)
+    
+    # Generate tokens
+    access_token = create_access_token(data={"sub": user_data["user_id"]})
+    refresh_token = create_refresh_token(data={"sub": user_data["user_id"]})
+    
+    return AuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user={
+            "user_id": user_data["user_id"],
+            "email": user_data["email"],
+            "username": user_data["username"]
+        }
+    )
+
+@app.post("/api/auth/logout")
+async def logout(current_user: User = Depends(get_current_user)):
+    """Logout user"""
+    # Delete all user sessions
+    deleted = delete_user_sessions(current_user.user_id)
+    return {"message": "Logged out successfully", "sessions_deleted": deleted}
+
+@app.get("/api/auth/me", dependencies=[Depends(get_current_user)])
+async def get_me(current_user: User = Depends(get_current_user)):
+    """Get current user info"""
+    return {
+        "user_id": current_user.user_id,
+        "email": current_user.email,
+        "username": current_user.username,
+        "is_active": current_user.is_active
+    }
+
+@app.post("/api/auth/refresh")
+async def refresh_token(request: Request):
+    """Refresh access token"""
+    body = await request.json()
+    refresh_token = body.get("refresh_token")
+    
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="Refresh token required")
+    
+    payload = verify_token(refresh_token, "refresh")
+    user_id = payload.get("sub")
+    
+    # Generate new access token
+    access_token = create_access_token(data={"sub": user_id})
+    
+    return {"access_token": access_token}
+
+# ============================================================================
+# Voice WebSocket Endpoint
+# ============================================================================
+@app.websocket("/ws/voice")
+async def voice_websocket(websocket: WebSocket):
+    """WebSocket endpoint for real-time voice communication"""
+    await voice_handler.connect(websocket)
+    
+    try:
+        while True:
+            # Receive audio data
+            data = await websocket.receive_bytes()
+            
+            # Handle audio and send response
+            await voice_handler.handle_audio(websocket, data)
+            
+    except WebSocketDisconnect:
+        voice_handler.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"Voice WebSocket error: {e}")
+        voice_handler.disconnect(websocket)
     
     # Theme-based followups
     for theme in sentiment.get("themes", []):
