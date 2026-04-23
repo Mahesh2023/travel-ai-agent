@@ -1,47 +1,27 @@
-# Render Deployment Configuration
-# Note: This is a simplified monolithic deployment suitable for Render.
-# For the full microservices architecture (100M users scale), use Kubernetes with the k8s/ manifests.
+# Render Deployment Configuration - Simplified Travel AI Agent
+# Following teloscopy pattern: Single service, vanilla HTML/CSS/JS, LLM integration
 
 services:
   - type: web
-    name: travel-ai-backend
+    name: travel-ai-agent
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PORT
         value: "8000"
-      - key: DATABASE_URL
+      # LLM Configuration (OpenAI-compatible - works with Grok)
+      - key: TRAVEL_LLM_BACKEND
+        value: openai
+      - key: TRAVEL_LLM_MODEL
+        value: gpt-4o-mini
+      - key: TRAVEL_LLM_BASE_URL
+        value: https://api.openai.com/v1
+      - key: TRAVEL_LLM_API_KEY
         sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: PINECONE_API_KEY
-        sync: false
-      - key: PINECONE_ENVIRONMENT
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: JWT_SECRET
-        sync: false
-      - key: STRIPE_API_KEY
-        sync: false
-
-  - type: web
-    name: travel-ai-frontend
-    runtime: node
-    plan: starter
-    workingDir: frontend
-    buildCommand: npm install && npm run build
-    startCommand: npm start
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        value: https://travel-ai-backend.onrender.com
-    # Next.js specific settings
-    publishDir: .next
-
-databases:
-  - name: travel-db
-    databaseName: travel_db
-    user: travel
-    plan: starter
+      # Alternative: Use Grok
+      # - key: TRAVEL_LLM_BASE_URL
+      #   value: https://api.x.ai/v1
+      # - key: TRAVEL_LLM_MODEL
+      #   value: grok-beta

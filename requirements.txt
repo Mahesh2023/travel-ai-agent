@@ -1,27 +1,11 @@
-# Core dependencies for monolithic backend (Render deployment)
+# Travel AI Agent - Minimal Dependencies (following teloscopy pattern)
+# FastAPI + Vanilla HTML/CSS/JS + LLM Integration
+
+# Core dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-sqlalchemy>=2.0.36
-alembic==1.12.1
-psycopg2-binary==2.9.9
-redis==5.0.1
-
-# AI/ML dependencies (simplified)
-openai>=1.10.0
-pinecone-client==2.2.4
-
-# Authentication
-python-multipart==0.0.6
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-
-# Configuration
 pydantic>=2.6.0
-pydantic-settings>=2.2.0
-httpx==0.25.2
 python-dotenv==1.0.0
 
-# External integrations (optional for testing)
-stripe==7.8.0
-sendgrid==6.10.0
-twilio==8.11.0
+# No external dependencies needed for basic functionality
+# LLM integration uses standard library (urllib) for OpenAI-compatible APIs
