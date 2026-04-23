@@ -1,20 +1,22 @@
 """
-Travel AI Agent Platform - Complete Rewrite
+Travel AI Agent Platform - Complete Rewrite with Security & Scaling
 Modern, professional design with travel counselling assistant
-Following teloscopy pattern: FastAPI + LLM + Sentiment Analysis
+Following teloscopy pattern: FastAPI + LLM + Sentiment Analysis + Security + Scaling
 """
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import os
 import json
 import logging
+import time
+import uuid
 from pathlib import Path
 from dotenv import load_dotenv
-from typing import Optional, Dict, Any, List
-from datetime import datetime
+from typing import Optional, Dict, Any, List, Callable
+from datetime import datetime, timedelta
 import hashlib
 import hmac
 
@@ -24,12 +26,134 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Environment
+_TELOSCOPY_ENV = os.getenv("TELOSCOPY_ENV", "development")
+
 # LLM Configuration
 _LLM_BACKEND = os.getenv("TRAVEL_LLM_BACKEND", "openai")
 _LLM_MODEL = os.getenv("TRAVEL_LLM_MODEL", "gpt-4o-mini")
 _LLM_BASE_URL = os.getenv("TRAVEL_LLM_BASE_URL", "https://api.openai.com/v1")
 _LLM_API_KEY = os.getenv("TRAVEL_LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
-_JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-this")
+
+# Security Configuration
+_CONSENT_SECRET = os.getenv("TRAVEL_CONSENT_SECRET", hashlib.sha256(os.urandom(32)).hexdigest())
+_CORS_ORIGINS = os.getenv("TRAVEL_CORS_ORIGINS", "*").split(",") if os.getenv("TRAVEL_CORS_ORIGINS") else ["*"]
+
+# Rate Limiting Configuration
+_RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
+_RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
+
+# ============================================================================
+# In-Memory Rate Limiter (Replace with Redis for production scaling)
+# ============================================================================
+class RateLimiter:
+    """In-memory rate limiter using sliding window (replace with Redis for production)"""
+    
+    def __init__(self):
+        self._requests: Dict[str, List[float]] = {}
+    
+    def is_allowed(self, client_id: str, max_requests: int = _RATE_LIMIT_REQUESTS, window: int = _RATE_LIMIT_WINDOW) -> bool:
+        now = time.time()
+        window_start = now - window
+        
+        # Clean old requests
+        if client_id in self._requests:
+            self._requests[client_id] = [
+                req_time for req_time in self._requests[client_id]
+                if req_time > window_start
+            ]
+        else:
+            self._requests[client_id] = []
+        
+        # Check if under limit
+        if len(self._requests[client_id]) >= max_requests:
+            return False
+        
+        # Add current request
+        self._requests[client_id].append(now)
+        return True
+
+_rate_limiter = RateLimiter()
+
+def rate_limit(max_requests: int = _RATE_LIMIT_REQUESTS, window: int = _RATE_LIMIT_WINDOW):
+    """Dependency for rate limiting"""
+    async def check_rate_limit(request: Request):
+        client_id = request.client.host if request.client else "unknown"
+        if not _rate_limiter.is_allowed(client_id, max_requests, window):
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded: {max_requests} requests per {window} seconds"
+            )
+    return check_rate_limit
+
+# ============================================================================
+# Consent System (HMAC-signed tokens)
+# ============================================================================
+_consent_store: Dict[str, Dict[str, Any]] = {}
+_withdrawn_consent: set = set()
+
+def generate_consent_token(session_id: str, purposes: List[str]) -> str:
+    """Generate HMAC-signed consent token"""
+    timestamp = int(time.time())
+    data = f"{session_id}:{','.join(sorted(purposes))}:{timestamp}".encode()
+    signature = hmac.new(
+        _CONSENT_SECRET.encode(),
+        data,
+        hashlib.sha256
+    ).hexdigest()
+    
+    token = f"{session_id}:{','.join(sorted(purposes))}:{timestamp}:{signature}"
+    _consent_store[token] = {
+        "session_id": session_id,
+        "purposes": purposes,
+        "granted_at": timestamp,
+        "withdrawn": False
+    }
+    return token
+
+def verify_consent_token(token: str, required_purposes: List[str]) -> bool:
+    """Verify consent token and check purposes"""
+    if token in _withdrawn_consent:
+        return False
+    
+    if token not in _consent_store:
+        return False
+    
+    consent_data = _consent_store[token]
+    
+    # Check token age (24 hours)
+    if time.time() - consent_data["granted_at"] > 86400:
+        return False
+    
+    # Check required purposes
+    granted_purposes = set(consent_data["purposes"])
+    required = set(required_purposes)
+    
+    return required.issubset(granted_purposes)
+
+def require_consent(purposes: List[str]):
+    """Dependency to require consent for specific purposes"""
+    async def check_consent(request: Request):
+        token = request.headers.get("X-Consent-Token")
+        if not token or not verify_consent_token(token, purposes):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Consent required for purposes: {', '.join(purposes)}"
+            )
+    return check_consent
+
+# ============================================================================
+# Security Headers Middleware (from teloscopy)
+# ============================================================================
+_CSP_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; "
+    "font-src 'self'; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'"
+)
 
 # ============================================================================
 # Pydantic Models
@@ -350,22 +474,119 @@ def detect_themes(message: str) -> List[str]:
 # ============================================================================
 # FastAPI Application
 # ============================================================================
+_docs_url = "/docs" if _TELOSCOPY_ENV != "production" else None
+_redoc_url = "/redoc" if _TELOSCOPY_ENV != "production" else None
+
 app = FastAPI(
     title="Travel AI Agent Platform",
-    description="AI-powered travel planning and counselling with modern design",
+    description="AI-powered travel planning and counselling with security and scaling",
     version="3.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
+    openapi_tags=[
+        {"name": "Health", "description": "System health and readiness checks"},
+        {"name": "Travel Planning", "description": "AI-powered travel itinerary generation"},
+        {"name": "Travel Counselling", "description": "Travel guidance and support with LLM"},
+        {"name": "Legal", "description": "Consent management and legal compliance"},
+    ],
 )
 
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-Consent-Token"],
 )
+
+# Security Headers Middleware
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Append security headers to every HTTP response (from teloscopy)"""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "0"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
+    response.headers["Content-Security-Policy"] = _CSP_POLICY
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    return response
+
+# CSRF Protection Middleware
+@app.middleware("http")
+async def csrf_middleware(request: Request, call_next):
+    """Enforce CSRF protection on state-changing requests (from teloscopy)"""
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        path = request.url.path
+        exempt = (
+            path.startswith("/api/legal/")
+            or path.startswith("/docs")
+            or path.startswith("/redoc")
+            or path.startswith("/openapi")
+        )
+        if not exempt:
+            xrw = request.headers.get("x-requested-with", "")
+            ct = request.headers.get("content-type", "")
+            if not (xrw or "application/json" in ct):
+                return JSONResponse(
+                    status_code=403,
+                    content={"error": {"code": 403, "message": "CSRF validation failed. Include appropriate Content-Type or X-Requested-With header."}},
+                )
+    response = await call_next(request)
+    return response
+
+# Request ID Middleware
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Generate unique request ID and log with timing (from teloscopy)"""
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+    start = time.monotonic()
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed = time.monotonic() - start
+        logger.error(
+            "%s %s 500 took %.3fs [request_id=%s]",
+            request.method,
+            request.url.path,
+            elapsed,
+            request_id,
+        )
+        raise
+    elapsed = time.monotonic() - start
+    status_code = response.status_code
+    if status_code >= 500:
+        logger.error(
+            "%s %s %d took %.3fs [request_id=%s]",
+            request.method,
+            request.url.path,
+            status_code,
+            elapsed,
+            request_id,
+        )
+    elif status_code >= 400:
+        logger.warning(
+            "%s %s %d took %.3fs [request_id=%s]",
+            request.method,
+            request.url.path,
+            status_code,
+            elapsed,
+            request_id,
+        )
+    else:
+        logger.info(
+            "%s %s %d took %.3fs",
+            request.method,
+            request.url.path,
+            status_code,
+            elapsed,
+        )
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 # ============================================================================
 # Health Endpoints
@@ -382,6 +603,9 @@ async def root():
             "emergency_detection",
             "sentiment_analysis",
             "llm_integration",
+            "security_headers",
+            "rate_limiting",
+            "consent_system",
         ],
     }
 
@@ -390,9 +614,89 @@ async def health():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
 # ============================================================================
+# Legal/Consent Endpoints (from teloscopy)
+# ============================================================================
+@app.post("/api/legal/consent")
+async def grant_consent(request: Request):
+    """Grant consent for specific purposes"""
+    body = await request.json()
+    session_id = body.get("session_id") or str(uuid.uuid4())
+    purposes = body.get("purposes", [])
+    
+    if not purposes:
+        raise HTTPException(status_code=400, detail="Purposes are required")
+    
+    token = generate_consent_token(session_id, purposes)
+    return {"token": token, "session_id": session_id, "purposes": purposes}
+
+@app.post("/api/legal/consent/withdraw")
+async def withdraw_consent(request: Request):
+    """Withdraw consent"""
+    body = await request.json()
+    token = body.get("token")
+    
+    if not token:
+        raise HTTPException(status_code=400, detail="Token is required")
+    
+    _withdrawn_consent.add(token)
+    if token in _consent_store:
+        del _consent_store[token]
+    
+    return {"message": "Consent withdrawn"}
+
+@app.get("/api/legal/notice")
+async def legal_notice():
+    """Return legal notice"""
+    return {
+        "title": "Travel AI Agent Legal Notice",
+        "version": "1.0",
+        "last_updated": datetime.utcnow().isoformat(),
+        "content": """
+        This platform provides AI-powered travel planning and counselling services.
+        By using this service, you agree to the following:
+        
+        1. Your travel data is processed for trip planning and counselling purposes only
+        2. We use LLM services to generate travel recommendations
+        3. Your data is not stored permanently (in-memory processing only)
+        4. Emergency detection is used to provide safety resources when needed
+        5. This service is for informational purposes only, not professional travel advice
+        """,
+    }
+
+@app.get("/api/legal/privacy-policy")
+async def privacy_policy():
+    """Return privacy policy"""
+    return {
+        "title": "Privacy Policy",
+        "version": "1.0",
+        "effective_date": "2026-04-22",
+        "content": """
+        Data Collection:
+        - Travel preferences and itinerary data
+        - Counselling conversation history (in-memory only)
+        - No personal identification required
+        
+        Data Usage:
+        - Generate travel recommendations
+        - Provide travel counselling
+        - Improve service quality
+        
+        Data Retention:
+        - All data processed in-memory
+        - No permanent storage
+        - Sessions cleared after 24 hours
+        
+        Your Rights:
+        - Right to withdraw consent
+        - Right to data deletion
+        - Right to access your data
+        """,
+    }
+
+# ============================================================================
 # Travel Planning Endpoints
 # ============================================================================
-@app.post("/api/travel/plan", response_model=TravelPlanResponse)
+@app.post("/api/travel/plan", response_model=TravelPlanResponse, dependencies=[Depends(rate_limit(30, 60))])
 async def plan_trip(request: TravelPlanRequest):
     """Generate comprehensive travel plan"""
     client = get_llm_client()
@@ -515,7 +819,7 @@ Please provide:
 # ============================================================================
 # Travel Counselling Endpoints
 # ============================================================================
-@app.post("/api/travel/counsel", response_model=CounsellorResponse)
+@app.post("/api/travel/counsel", response_model=CounsellorResponse, dependencies=[Depends(rate_limit(40, 60))])
 async def travel_counsel(request: TravelCounsellorRequest):
     """Travel counselling with LLM integration"""
     message = request.message.strip()

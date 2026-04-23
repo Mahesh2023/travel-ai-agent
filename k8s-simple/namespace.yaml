@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: travel-agent-simple
+  labels:
+    name: travel-agent-simple
+    environment: production

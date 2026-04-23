@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: travel-agent
+  namespace: travel-agent-simple
+  labels:
+    app: travel-agent
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: travel-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: travel-agent
+  namespace: travel-agent-simple
+  labels:
+    app: travel-agent
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: travel-agent
+  template:
+    metadata:
+      labels:
+        app: travel-agent
+        version: v3.0.0
+    spec:
+      containers:
+      - name: travel-agent
+        image: ghcr.io/mahesh2023/travel-agent:latest
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: travel-agent-config
+        - secretRef:
+            name: travel-agent-secrets
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
