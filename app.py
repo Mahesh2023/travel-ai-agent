@@ -20,11 +20,11 @@ from datetime import datetime, timedelta
 import hashlib
 import hmac
 
-# Import auth and voice modules
-from auth import (
+# Import auth and voice modules (simplified - in-memory)
+from auth_simple import (
     hash_password, verify_password, create_access_token, create_refresh_token,
     verify_token, get_current_user, create_session, get_session, delete_session,
-    delete_user_sessions, User
+    delete_user_sessions, User, get_user_by_email, save_user
 )
 from voice import VoiceAssistant, VoiceWebSocketHandler, voice_handler
 
@@ -52,7 +52,7 @@ _RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
 _RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
 
 # ============================================================================
-# In-Memory Rate Limiter (Replace with Redis for production scaling)
+# In-Memory Rate Limiter (Following teloscopy pattern - no external Redis)
 # ============================================================================
 class RateLimiter:
     """In-memory rate limiter using sliding window (replace with Redis for production)"""
@@ -925,10 +925,11 @@ class AuthResponse(BaseModel):
 
 @app.post("/api/auth/register", response_model=AuthResponse, dependencies=[Depends(rate_limit(10, 60))])
 async def register(request: RegisterRequest):
-    """Register new user"""
-    # Check if user already exists (in Redis for demo, use PostgreSQL in production)
-    user_data_key = f"user_data:{request.email}"
-    # In production, check PostgreSQL database here
+    """Register new user (in-memory storage like teloscopy)"""
+    # Check if user already exists
+    existing_user = get_user_by_email(request.email)
+    if existing_user:
+        raise HTTPException(status_code=400, detail="User already exists")
     
     # Hash password
     hashed_password = hash_password(request.password)
@@ -944,10 +945,8 @@ async def register(request: RegisterRequest):
         "created_at": datetime.utcnow().isoformat()
     }
     
-    # Store in Redis (demo - use PostgreSQL in production)
-    import redis
-    r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-    r.setex(user_data_key, timedelta(days=30).total_seconds(), json.dumps(user_data))
+    # Save to in-memory database
+    save_user(request.email, user_data)
     
     # Create session
     session_id = create_session(user_id, user_data)
@@ -968,17 +967,12 @@ async def register(request: RegisterRequest):
 
 @app.post("/api/auth/login", response_model=AuthResponse, dependencies=[Depends(rate_limit(20, 60))])
 async def login(request: LoginRequest):
-    """Login user"""
-    # Get user data (from Redis for demo, use PostgreSQL in production)
-    import redis
-    r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-    user_data_key = f"user_data:{request.email}"
-    user_data_json = r.get(user_data_key)
+    """Login user (in-memory storage like teloscopy)"""
+    # Get user data from in-memory database
+    user_data = get_user_by_email(request.email)
     
-    if not user_data_json:
+    if not user_data:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    user_data = json.loads(user_data_json)
     
     # Verify password
     if not verify_password(request.password, user_data["hashed_password"]):

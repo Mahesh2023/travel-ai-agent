@@ -1,5 +1,5 @@
-# Render Deployment Configuration - Simplified Travel AI Agent
-# Following teloscopy pattern: Single service, vanilla HTML/CSS/JS, LLM integration
+# Render Deployment Configuration - Simplified (Following Teloscopy Pattern)
+# Single service, no external databases, in-memory storage only
 
 services:
   - type: web
@@ -20,8 +20,9 @@ services:
         value: https://api.openai.com/v1
       - key: TRAVEL_LLM_API_KEY
         sync: false
-      # Alternative: Use Grok
-      # - key: TRAVEL_LLM_BASE_URL
-      #   value: https://api.x.ai/v1
-      # - key: TRAVEL_LLM_MODEL
-      #   value: grok-beta
+      # JWT Secret for authentication
+      - key: TRAVEL_CONSENT_SECRET
+        sync: false
+      # Environment
+      - key: TELOSCOPY_ENV
+        value: production
