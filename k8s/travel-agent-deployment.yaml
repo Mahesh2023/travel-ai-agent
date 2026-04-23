@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: travel-agent
+  namespace: travel-agent
+  labels:
+    app: travel-agent
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: travel-agent
+  template:
+    metadata:
+      labels:
+        app: travel-agent
+        version: v3.0.0
+    spec:
+      containers:
+      - name: travel-agent
+        image: ghcr.io/mahesh2023/travel-agent:latest
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        env:
+        - name: TRAVEL_LLM_BACKEND
+          value: "openai"
+        - name: TRAVEL_LLM_MODEL
+          value: "gpt-4o-mini"
+        - name: TRAVEL_LLM_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: travel-agent-secrets
+              key: llm-base-url
+        - name: TRAVEL_LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: travel-agent-secrets
+              key: llm-api-key
+        - name: TRAVEL_CONSENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: travel-agent-secrets
+              key: consent-secret
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: travel-agent-secrets
+              key: redis-url
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: travel-agent-secrets
+              key: database-url
+        - name: TELOSCOPY_ENV
+          value: "production"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
