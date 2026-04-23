@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import uuid
 
 # Configuration
