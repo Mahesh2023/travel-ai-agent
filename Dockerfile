@@ -1,5 +1,5 @@
 # Travel AI Agent - Docker Image for Scalable Deployment
-# Multi-stage build for production deployment
+# Multi-stage build for production deployment with Voice & Auth
 
 # Stage 1: Builder
 FROM python:3.12-slim as builder
@@ -10,6 +10,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
+    portaudio19-dev \
+    python3-dev \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -26,6 +29,9 @@ WORKDIR /app
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    portaudio19-dev \
+    python3-dev \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
@@ -36,6 +42,8 @@ ENV PATH=/root/.local/bin:$PATH
 
 # Copy application code
 COPY app.py .
+COPY auth.py .
+COPY voice.py .
 COPY index.html .
 
 # Create non-root user
