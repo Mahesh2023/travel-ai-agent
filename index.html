@@ -187,44 +187,6 @@
             background: rgba(255,255,255,0.15);
         }
 
-        /* Voice UI */
-        .voice-btn {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: var(--gradient-1);
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            transition: all 0.3s ease;
-            box-shadow: var(--shadow-lg);
-        }
-
-        .voice-btn:hover {
-            transform: scale(1.1);
-            box-shadow: var(--shadow-xl);
-        }
-
-        .voice-btn.recording {
-            background: var(--danger);
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-            50% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
-        }
-
-        .voice-status {
-            text-align: center;
-            margin-top: 10px;
-            color: var(--gray);
-            font-size: 0.9em;
-        }
-
         .stat {
             text-align: center;
         }
@@ -733,10 +695,8 @@
                 <div class="chat-container" id="chatContainer"></div>
                 <div class="chat-input">
                     <input type="text" id="chatInput" placeholder="Type your message...">
-                    <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" title="Voice Assistant">🎤</button>
                     <button onclick="sendMessage()">Send</button>
                 </div>
-                <div class="voice-status" id="voiceStatus">Click microphone to speak</div>
                 <div class="followups" id="followups"></div>
                 <div class="loading" id="chatLoading">
                     <div class="loading-spinner"></div>

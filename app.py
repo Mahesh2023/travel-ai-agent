@@ -20,13 +20,12 @@ from datetime import datetime, timedelta
 import hashlib
 import hmac
 
-# Import auth and voice modules (simplified - in-memory)
+# Import auth module (simplified - in-memory)
 from auth_simple import (
     hash_password, verify_password, create_access_token, create_refresh_token,
     verify_token, get_current_user, create_session, get_session, delete_session,
     delete_user_sessions, User, get_user_by_email, save_user
 )
-from voice import VoiceAssistant, VoiceWebSocketHandler, voice_handler
 
 load_dotenv()
 
@@ -1033,26 +1032,10 @@ async def refresh_token(request: Request):
     return {"access_token": access_token}
 
 # ============================================================================
-# Voice WebSocket Endpoint
+# Voice WebSocket Endpoint (Disabled - requires Python < 3.13)
 # ============================================================================
-@app.websocket("/ws/voice")
-async def voice_websocket(websocket: WebSocket):
-    """WebSocket endpoint for real-time voice communication"""
-    await voice_handler.connect(websocket)
-    
-    try:
-        while True:
-            # Receive audio data
-            data = await websocket.receive_bytes()
-            
-            # Handle audio and send response
-            await voice_handler.handle_audio(websocket, data)
-            
-    except WebSocketDisconnect:
-        voice_handler.disconnect(websocket)
-    except Exception as e:
-        logger.error(f"Voice WebSocket error: {e}")
-        voice_handler.disconnect(websocket)
+# Voice feature disabled due to SpeechRecognition library incompatibility with Python 3.14
+# To enable voice, use Python 3.12 or earlier, or use a compatible speech library
     
     # Theme-based followups
     for theme in sentiment.get("themes", []):

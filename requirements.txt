@@ -12,11 +12,4 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 
-# Voice/Speech recognition
-SpeechRecognition==3.10.0
-pydub==0.25.1
-
-# Text-to-Speech
-gTTS==2.4.0
-
 # LLM integration uses standard library (urllib) for OpenAI-compatible APIs
