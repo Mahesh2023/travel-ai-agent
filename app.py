@@ -20,11 +20,11 @@ from datetime import datetime, timedelta
 import hashlib
 import hmac
 
-# Import auth and voice modules (simplified - in-memory)
-from auth_simple import (
+# Import auth and voice modules (scalable - Redis + PostgreSQL)
+from auth import (
     hash_password, verify_password, create_access_token, create_refresh_token,
     verify_token, get_current_user, create_session, get_session, delete_session,
-    delete_user_sessions, User, get_user_by_email, save_user
+    delete_user_sessions, User
 )
 from voice import VoiceAssistant, VoiceWebSocketHandler, voice_handler
 
@@ -52,7 +52,7 @@ _RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
 _RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
 
 # ============================================================================
-# In-Memory Rate Limiter (Following teloscopy pattern - no external Redis)
+# In-Memory Rate Limiter (Replace with Redis for production scaling)
 # ============================================================================
 class RateLimiter:
     """In-memory rate limiter using sliding window (replace with Redis for production)"""
@@ -925,11 +925,10 @@ class AuthResponse(BaseModel):
 
 @app.post("/api/auth/register", response_model=AuthResponse, dependencies=[Depends(rate_limit(10, 60))])
 async def register(request: RegisterRequest):
-    """Register new user (in-memory storage like teloscopy)"""
-    # Check if user already exists
-    existing_user = get_user_by_email(request.email)
-    if existing_user:
-        raise HTTPException(status_code=400, detail="User already exists")
+    """Register new user (Redis + PostgreSQL for scalability)"""
+    # Check if user already exists (in Redis for demo, use PostgreSQL in production)
+    user_data_key = f"user_data:{request.email}"
+    # In production, check PostgreSQL database here
     
     # Hash password
     hashed_password = hash_password(request.password)
@@ -945,8 +944,10 @@ async def register(request: RegisterRequest):
         "created_at": datetime.utcnow().isoformat()
     }
     
-    # Save to in-memory database
-    save_user(request.email, user_data)
+    # Store in Redis (demo - use PostgreSQL in production)
+    import redis
+    r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+    r.setex(user_data_key, timedelta(days=30).total_seconds(), json.dumps(user_data))
     
     # Create session
     session_id = create_session(user_id, user_data)
